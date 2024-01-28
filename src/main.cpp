@@ -55,7 +55,7 @@ class $modify(FMODAudioEngine) {
 	TodoReturn playMusic(gd::string p0, bool p1, float p2, int p3) {
 		// there is a last playing track and it is the one we just redirected
 		if (!gLastPlayedTrack.empty() && gLastPlayedTrack == std::string{ p0 })
-			return this->FMODAudioEngine::playMusic(gLastRedirectedTrack, p1, p2, p3);
+			return; // not calling original here prevents fading in when going back to the title screen. maybe it causes other issues but didn't see anything
 
 		gLastPlayedTrack = p0.data();
 
