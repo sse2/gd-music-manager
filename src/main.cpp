@@ -15,21 +15,21 @@ $execute{
 namespace {
 	// does the user have a directory with songs?
 	bool getRedirectedSongAvailable(const gd::string& song) {
-		std::string path = fmt::format("music-manager\\{}", song.c_str());
+		std::string path = fmt::format("{}\\music-manager\\{}", geode::dirs::getGameDir().string().data(), song.c_str());
 		return std::filesystem::exists(path) && std::filesystem::is_directory(path) && !std::filesystem::is_empty(path);
 	}
 
 	// pick a random song from the directory
 	gd::string getRandomSongFromPath(const gd::string& song) {
-		std::string path = fmt::format("music-manager\\{}", song.c_str());
+		std::string path = fmt::format("{}\\music-manager\\{}", geode::dirs::getGameDir().string().data(), song.c_str());
 		std::vector<std::string> files;
 
 		for (const auto& entry : std::filesystem::directory_iterator(path))
 			if (!std::filesystem::is_directory(entry))
-				files.push_back(entry.path().string());
+				files.push_back(entry.path().filename().string());
 
-		// need ..\\ because the path passed to FMOD function should be relative to the Resources folder
-		return gd::string{ fmt::format("..\\{}", files.at(rand() % files.size()).data()) };
+		// disgusting path formatting because the path passed to FMOD function absolutely **needs** be relative to the Resources folder
+		return gd::string{ fmt::format("..\\music-manager\\{}\\{}", song.c_str(), files.at(rand() % files.size())).data() };
 	}
 
 	// todo; get rid of these
