@@ -1,8 +1,7 @@
 {
 	"geode": "3.0.0",
 	"gd": {
-		"win": "*",
-		"mac": "*"
+		"win": "*"
 	},
 	"id": "sse2.gj-music-manager",
 	"name": "Music Manager",
