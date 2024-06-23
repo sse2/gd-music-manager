@@ -8,7 +8,7 @@ Create a "music-manager" directory inside your Geometry Dash root. Create a fold
 
 ## Caveats
 
-Because Geode isn't fully complete, not all tracks and no SFX can be replaced (yet).
+~~Because Geode isn't fully complete, not all tracks and no SFX can be replaced (yet).~~ Geode (I think) now has the functionality available for replacing SFX too. I'll update the mod with support for that when I feel like it.
 
 ## Supported replacement tracks:
 - menuLoop.mp3
