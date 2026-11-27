@@ -12,4 +12,5 @@ Create a "music-manager" directory inside your Geometry Dash root. Create a fold
 
 ## Caveats
 I don't know if this is the best way of achieving this result, but I don't care.
+<!-- TODO: A lot has changed since this was originally written, is this still true? --> 
 Geode isn't fully complete so functions like playEffectAdvanced crash when calling original after hooking so we can't replace SFX (yet). Other functions such as queueStartMusic are not implemented yet therefore can't be hooked.

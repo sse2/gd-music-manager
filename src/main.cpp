@@ -1,3 +1,4 @@
+#include <asp/fs/fs.hpp>
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/modify/FMODAudioEngine.hpp>
@@ -11,71 +12,76 @@ $execute
 
 namespace
 {
- // does the user have a directory with songs?
- bool getRedirectedSongAvailable ( const gd::string &song )
+ // pick a random song from the directory, or return std::nullopt if there's nothing to redirect to
+ std::optional< std::string > getRandomSongFromPath ( const asp::fs::PathView &song )
  {
-  std::string path = fmt::format ( "{}\\music-manager\\{}", geode::dirs::getGameDir ( ).string ( ).data ( ), song.c_str ( ) );
-  return std::filesystem::exists ( path ) && ( std::filesystem::is_directory ( path ) || std::filesystem::is_regular_file ( path ) ) && !std::filesystem::is_empty ( path );
- }
+  asp::fs::Path path = geode::dirs::getGameDir ( ) / "music-manager" / song;
 
- // pick a random song from the directory
- gd::string getRandomSongFromPath ( const gd::string &song )
- {
-  std::string path = fmt::format ( "{}\\music-manager\\{}", geode::dirs::getGameDir ( ).string ( ).data ( ), song.c_str ( ) );
-  std::vector< std::string > files;
+  if ( !asp::fs::exists ( path ) )
+   return std::nullopt;
+
+  auto metaResult = asp::fs::metadata( path );
+  if ( !metaResult.isOk ( ) )
+   return std::nullopt;
+
+  asp::fs::MetadataBase meta = metaResult.unwrap ( );
 
   // path could also be a file, so we need to check for that
-  if ( !std::filesystem::is_directory ( path ) )
-   return gd::string ( fmt::format ( "..\\music-manager\\{}", song.c_str ( ) ).data ( ) );
+  if ( meta.isFile ( ) )
+   return path.string ( );
 
-  for ( const auto &entry : std::filesystem::directory_iterator ( path ) )
-   if ( !std::filesystem::is_directory ( entry ) )
-    files.push_back ( entry.path ( ).filename ( ).string ( ) );
+  auto iterDirResult = asp::fs::iterDir ( path );
 
-  // disgusting path formatting because the path passed to FMOD function absolutely **needs** be relative to the Resources folder
-  return gd::string { fmt::format ( "..\\music-manager\\{}\\{}", song.c_str ( ), files.at ( rand ( ) % files.size ( ) ) ).data ( ) };
+  if ( !iterDirResult.isOk ( ) )
+   return std::nullopt;
+
+  std::vector< asp::fs::Path > files;
+
+  for ( const auto &entry : iterDirResult.unwrap ( ) )
+   if ( entry.isOk ( ) && entry.unwrap ( ).isFile ( ) )
+    files.push_back ( entry.unwrap ( ).path );
+
+
+  if ( files.size ( ) == 0 ) return std::nullopt;
+
+  return files.at ( rand ( ) % files.size ( ) ).string ( );
  }
 
- // todo; get rid of these
  std::string gLastPlayedTrack;
- std::string gLastRedirectedTrack;
- std::string gLastPlayedEffect;
- std::string gLastRedirectedEffect;
 } // namespace
 
 // clang-format off
 class $modify ( FMODAudioEngine ) {
-  // all music passes through here, some might pass more than once per play which leads to some songs fucking up the fade in (menuLoop)
-  void loadMusic ( gd::string p0, float p1, float p2, float p3, bool p4, int p5, int p6 ) {
-    // there isn't a last playing track or it isn't one we redirected
-    if ( gLastPlayedTrack.empty ( ) || ( gLastPlayedTrack != std::string { p0 } && std::string { p0 }.find ( "music-manager\\" ) == std::string::npos ) ) {
+  // todo; add support for sfx
+  void loadMusic ( std::string p0, float p1, float p2, float p3, bool p4, int p5, int p6, bool p7 ) {
+    if ( std::string { p0 }.find ( "music-manager\\" ) == std::string::npos ) {
       gLastPlayedTrack = p0;
+
+      // custom songs pass the full absolute path to the file, we only care about the filename
+      asp::fs::Path songPath = asp::fs::Path( p0 );
+      std::optional< asp::fs::PathView > song = songPath.filename ( );
+
+      // redirecting this track, if possible
+      if ( song.has_value ( ) ) {
+        // pick a random file in directory - to note; the path is relative to the Resources folder here, but our current, actual, path used by asp::fs is the GD directory
+        // therefore some extra string processing is required here...
+        std::optional< std::string > newString = getRandomSongFromPath ( *song );
+        if ( newString.has_value ( ) ) {
+          return this->FMODAudioEngine::loadMusic ( *newString, p1, p2, p3, p4, p5, p6, p7 );
+        }
+      }
     }
-  
-    return this->FMODAudioEngine::loadMusic ( p0, p1, p2, p3, p4, p5, p6 );
+
+    return this->FMODAudioEngine::loadMusic ( p0, p1, p2, p3, p4, p5, p6, p7 );
   }
-  
-  // todo; refactor and add support for sfx, should look into 3.0 bindings
-  void playMusic ( gd::string p0, bool p1, float p2, int p3 )
+
+  void playMusic ( std::string p0, bool p1, float p2, int p3 )
   {
-   // there is a last playing track and it is the one we just redirected
-   if ( !gLastPlayedTrack.empty ( ) && gLastPlayedTrack == std::string { p0 } )
-    return; // not calling original here prevents fading in when going back to the title screen. maybe it causes other issues but didn't see anything
-  
-   gLastPlayedTrack = p0.data ( );
-  
-   // redirecting this track, if possible
-   if ( getRedirectedSongAvailable ( p0 ) )
-   {
-    // pick a random file in directory - to note; the path is relative to the Resources folder here, but our current, actual, path used by std::filesystem is the GD directory
-    // therefore some extra string processing is required here...
-    gd::string newString = getRandomSongFromPath ( p0 );
-    gLastRedirectedTrack = newString;
-  
-    return this->FMODAudioEngine::playMusic ( newString, p1, p2, p3 );
-   }
-  
-   return this->FMODAudioEngine::playMusic ( p0, p1, p2, p3 );
+    // there is a last playing track and it is the one we just redirected
+    if ( !gLastPlayedTrack.empty ( ) && gLastPlayedTrack == std::string { p0 } )
+      return; // not calling original here prevents fading in when going back to the title screen. maybe it causes other issues but didn't see anything
+
+    return this->FMODAudioEngine::playMusic ( p0, p1, p2, p3 );
   }
 };
 // clang-format on
