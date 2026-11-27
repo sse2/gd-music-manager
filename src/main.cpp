@@ -12,29 +12,39 @@ $execute
 
 namespace
 {
- // does the user have a directory with songs?
- bool getRedirectedSongAvailable ( const std::string &song )
+ // pick a random song from the directory, or return std::nullopt if there's nothing to redirect to
+ std::optional< std::string > getRandomSongFromPath ( const asp::fs::PathView &song )
  {
-  std::string path = fmt::format ( "{}\\music-manager\\{}", geode::dirs::getGameDir ( ).string ( ).data ( ), song.c_str ( ) );
-  return std::filesystem::exists ( path ) && ( std::filesystem::is_directory ( path ) || std::filesystem::is_regular_file ( path ) ) && !std::filesystem::is_empty ( path );
- }
+  asp::fs::Path path = geode::dirs::getGameDir ( ) / "music-manager" / song;
 
- // pick a random song from the directory
- std::string getRandomSongFromPath ( const std::string &song )
- {
-  std::string path = fmt::format ( "{}\\music-manager\\{}", geode::dirs::getGameDir ( ).string ( ).data ( ), song.c_str ( ) );
-  std::vector< std::string > files;
+  if ( !asp::fs::exists ( path ) )
+   return std::nullopt;
+
+  auto metaResult = asp::fs::metadata( path );
+  if ( !metaResult.isOk ( ) )
+   return std::nullopt;
+
+  asp::fs::MetadataBase meta = metaResult.unwrap ( );
 
   // path could also be a file, so we need to check for that
-  if ( !std::filesystem::is_directory ( path ) )
-   return std::string ( fmt::format ( "..\\music-manager\\{}", song.c_str ( ) ).data ( ) );
+  if ( meta.isFile ( ) )
+   return path.string ( );
 
-  for ( const auto &entry : std::filesystem::directory_iterator ( path ) )
-   if ( !std::filesystem::is_directory ( entry ) )
-    files.push_back ( entry.path ( ).filename ( ).string ( ) );
+  auto iterDirResult = asp::fs::iterDir ( path );
 
-  // disgusting path formatting because the path passed to FMOD function absolutely **needs** be relative to the Resources folder
-  return std::string { fmt::format ( "..\\music-manager\\{}\\{}", song.c_str ( ), files.at ( rand ( ) % files.size ( ) ) ).data ( ) };
+  if ( !iterDirResult.isOk ( ) )
+   return std::nullopt;
+
+  std::vector< asp::fs::Path > files;
+
+  for ( const auto &entry : iterDirResult.unwrap ( ) )
+   if ( entry.isOk ( ) && entry.unwrap ( ).isFile ( ) )
+    files.push_back ( entry.unwrap ( ).path );
+
+
+  if ( files.size ( ) == 0 ) return std::nullopt;
+
+  return files.at ( rand ( ) % files.size ( ) ).string ( );
  }
 
  std::string gLastPlayedTrack;
@@ -45,18 +55,20 @@ class $modify ( FMODAudioEngine ) {
   // todo; add support for sfx
   void loadMusic ( std::string p0, float p1, float p2, float p3, bool p4, int p5, int p6, bool p7 ) {
     if ( std::string { p0 }.find ( "music-manager\\" ) == std::string::npos ) {
-      // custom songs pass the full absolute path to the file, we only care about the filename
-      std::string song = asp::fs::Path(p0).filename()->string();
-
       gLastPlayedTrack = p0;
 
+      // custom songs pass the full absolute path to the file, we only care about the filename
+      asp::fs::Path songPath = asp::fs::Path( p0 );
+      std::optional< asp::fs::PathView > song = songPath.filename ( );
+
       // redirecting this track, if possible
-      if ( getRedirectedSongAvailable ( song ) ) {
+      if ( song.has_value ( ) ) {
         // pick a random file in directory - to note; the path is relative to the Resources folder here, but our current, actual, path used by asp::fs is the GD directory
         // therefore some extra string processing is required here...
-        std::string newString = getRandomSongFromPath ( song );
-
-        return this->FMODAudioEngine::loadMusic ( newString, p1, p2, p3, p4, p5, p6, p7 );
+        std::optional< std::string > newString = getRandomSongFromPath ( *song );
+        if ( newString.has_value ( ) ) {
+          return this->FMODAudioEngine::loadMusic ( *newString, p1, p2, p3, p4, p5, p6, p7 );
+        }
       }
     }
 
